@@ -68,10 +68,12 @@ function ChatList({ users, activeUser, onSelectUser, isMobileListOpen }) {
           </div>
         ) : (
           filteredUsers.map((user) => {
-            const isSelected = activeUser && activeUser.id === user.id;
+            const userId = user.id || user._id;
+            const activeId = activeUser ? (activeUser.id || activeUser._id) : null;
+            const isSelected = activeId && activeId === userId;
             return (
               <div
-                key={user.id}
+                key={userId}
                 className={`chat-user-item ${isSelected ? "active" : ""}`}
                 onClick={() => onSelectUser(user)}
               >

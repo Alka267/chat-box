@@ -12,31 +12,41 @@ import {
   ArrowRightIcon,
 } from "../Components/Icons";
 
+import { authService } from "./Serivies/api";
+
 function Signup({ onSignup, onSwitchToLogin }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name || !email || !password) {
       alert("Please fill in all fields!");
       return;
     }
-    if (confirmPassword && password !== confirmPassword) {
-      alert("Passwords do not match!");
+    if (password.length < 6) {
+      setErrorMsg("Password must be at least 6 characters long");
       return;
     }
-    onSignup({ name, email });
-  };
 
-  const handleDemoSignup = () => {
-    onSignup({
-      name: "Alka Bishan",
-      email: "alka@exemple.com",
-    });
+    setErrorMsg("");
+    setIsLoading(true);
+
+    try {
+      const response = await authService.signup(name, email, password);
+      setIsLoading(false);
+      if (response && response.user) {
+        onSignup(response.user);
+      }
+    } catch (err) {
+      console.warn("Backend signup error:", err.message);
+      setIsLoading(false);
+      setErrorMsg(err.message || "Failed to create account. Make sure backend is running.");
+    }
   };
 
   return (
@@ -132,6 +142,21 @@ function Signup({ onSignup, onSwitchToLogin }) {
               </p>
             </div>
 
+            {errorMsg && (
+              <div style={{
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.3)",
+                color: "#f87171",
+                padding: "10px 14px",
+                borderRadius: "10px",
+                fontSize: "0.85rem",
+                marginBottom: "16px",
+                lineHeight: "1.4"
+              }}>
+                {errorMsg}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="auth-form-fields">
               <div className="form-field-group">
                 <label className="field-label">Full Name</label>
@@ -159,7 +184,7 @@ function Signup({ onSignup, onSwitchToLogin }) {
                   <input
                     type="email"
                     className="custom-auth-input"
-                    placeholder="alka@exemple.com"
+                    placeholder="name@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -196,18 +221,14 @@ function Signup({ onSignup, onSwitchToLogin }) {
                 </div>
               </div>
 
-              <button type="submit" className="btn-workspace-submit">
-                <span>Create Account</span>
-                <ArrowRightIcon size={18} color="#ffffff" />
-              </button>
-
               <button
-                type="button"
-                className="demo-pill-btn"
-                onClick={handleDemoSignup}
+                type="submit"
+                className="btn-workspace-submit"
+                disabled={isLoading}
+                style={{ opacity: isLoading ? 0.7 : 1 }}
               >
-                <ZapIcon size={16} color="#818cf8" />
-                <span>Demo Fast Track: 1-Click Register</span>
+                <span>{isLoading ? "Creating Account..." : "Create Account"}</span>
+                <ArrowRightIcon size={18} color="#ffffff" />
               </button>
             </form>
 

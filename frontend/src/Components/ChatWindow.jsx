@@ -7,6 +7,7 @@ function ChatWindow({
   activeUser,
   messages,
   onSendMessage,
+  onTyping,
   isTyping,
   onBackToList,
 }) {
@@ -121,7 +122,7 @@ function ChatWindow({
       </div>
 
       {/* Message Input Box */}
-      <MessageInput onSendMessage={onSendMessage} />
+      <MessageInput onSendMessage={onSendMessage} onTyping={onTyping} />
     </main>
   );
 }

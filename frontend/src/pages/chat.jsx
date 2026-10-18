@@ -1,220 +1,211 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { io } from "socket.io-client";
 import Navbar from "../Components/Navbar";
 import ChatList from "../Components/ChatList";
 import ChatWindow from "../Components/ChatWindow";
-
-const INITIAL_USERS = [
-  {
-    id: "1",
-    name: "Rahul Sharma",
-    avatar: null,
-    gradient: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)",
-    lastMessage: "Are you ready for the deployment today?",
-    time: "10:42 AM",
-    online: true,
-    unread: 2,
-  },
-  {
-    id: "2",
-    name: "Priya Patel",
-    avatar: null,
-    gradient: "linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)",
-    lastMessage: "I checked the new UI designs. Looks stunning! 😍",
-    time: "Yesterday",
-    online: true,
-    unread: 0,
-  },
-  {
-    id: "3",
-    name: "Amit Verma",
-    avatar: null,
-    gradient: "linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)",
-    lastMessage: "Let's connect in the evening call.",
-    time: "Yesterday",
-    online: false,
-    unread: 0,
-  },
-  {
-    id: "4",
-    name: "Sneha Reddy",
-    avatar: null,
-    gradient: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-    lastMessage: "Shared the socket documentation with you 🚀",
-    time: "Oct 10",
-    online: true,
-    unread: 0,
-  },
-  {
-    id: "5",
-    name: "Dev Team Global",
-    avatar: null,
-    gradient: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
-    lastMessage: "Rohit: Production build 2.4 is now live!",
-    time: "Oct 9",
-    online: true,
-    unread: 5,
-  },
-];
-
-const INITIAL_MESSAGES_MAP = {
-  "1": [
-    {
-      id: "m1",
-      text: "Hey Alka! Did you review the real-time chat architecture?",
-      sender: "Rahul Sharma",
-      time: "10:35 AM",
-      isOwn: false,
-    },
-    {
-      id: "m2",
-      text: "Yes Rahul, I am finishing up the frontend right now!",
-      sender: "Alka",
-      time: "10:38 AM",
-      isOwn: true,
-    },
-    {
-      id: "m3",
-      text: "Awesome! The dark mode styling and animations look super clean.",
-      sender: "Rahul Sharma",
-      time: "10:40 AM",
-      isOwn: false,
-    },
-    {
-      id: "m4",
-      text: "Are you ready for the deployment today?",
-      sender: "Rahul Sharma",
-      time: "10:42 AM",
-      isOwn: false,
-    },
-  ],
-  "2": [
-    {
-      id: "p1",
-      text: "Hey! Just wanted to share my feedback on the design.",
-      sender: "Priya Patel",
-      time: "Yesterday",
-      isOwn: false,
-    },
-    {
-      id: "p2",
-      text: "I checked the new UI designs. Looks stunning! 😍",
-      sender: "Priya Patel",
-      time: "Yesterday",
-      isOwn: false,
-    },
-  ],
-  "3": [
-    {
-      id: "a1",
-      text: "Let's connect in the evening call.",
-      sender: "Amit Verma",
-      time: "Yesterday",
-      isOwn: false,
-    },
-  ],
-  "4": [
-    {
-      id: "s1",
-      text: "Shared the socket documentation with you 🚀",
-      sender: "Sneha Reddy",
-      time: "Oct 10",
-      isOwn: false,
-    },
-  ],
-  "5": [
-    {
-      id: "g1",
-      text: "Rohit: Production build 2.4 is now live!",
-      sender: "Dev Team Global",
-      time: "Oct 9",
-      isOwn: false,
-    },
-  ],
-};
+import { userService, messageService, SOCKET_URL } from "./Serivies/api";
 
 function ChatPage({ currentUser, onLogout, isDarkMode, onToggleTheme }) {
-  const [users, setUsers] = useState(INITIAL_USERS);
-  const [activeUserId, setActiveUserId] = useState("1");
-  const [messagesMap, setMessagesMap] = useState(INITIAL_MESSAGES_MAP);
+  const [users, setUsers] = useState([]);
+  const [activeUserId, setActiveUserId] = useState(null);
+  const [messagesMap, setMessagesMap] = useState({});
   const [isTyping, setIsTyping] = useState(false);
   const [isMobileListOpen, setIsMobileListOpen] = useState(true);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const socketRef = useRef(null);
 
-  const activeUser = users.find((u) => u.id === activeUserId) || users[0];
-  const activeMessages = messagesMap[activeUserId] || [];
+  // Find active user by id or _id
+  const activeUser = users.find(
+    (u) => (u.id || u._id) === activeUserId
+  ) || null;
 
+  const activeMessages = activeUserId ? messagesMap[activeUserId] || [] : [];
+
+  // 1. Initialize Socket.io connection
+  useEffect(() => {
+    const currentId = currentUser?.id || currentUser?._id;
+    if (!currentId) return;
+
+    const socket = io(SOCKET_URL, {
+      query: { userId: currentId },
+      transports: ["websocket", "polling"],
+    });
+    socketRef.current = socket;
+
+    // Listen for online users
+    socket.on("getOnlineUsers", (onlineIds = []) => {
+      setUsers((prevUsers) =>
+        prevUsers.map((user) => {
+          const uid = user.id || user._id;
+          return {
+            ...user,
+            online: onlineIds.includes(uid),
+          };
+        })
+      );
+    });
+
+    // Listen for real-time incoming messages
+    socket.on("newMessage", (newMsg) => {
+      const senderId = newMsg.senderId;
+
+      setMessagesMap((prev) => ({
+        ...prev,
+        [senderId]: [...(prev[senderId] || []), { ...newMsg, isOwn: false }],
+      }));
+
+      // Update last message & unread badge in sidebar
+      setUsers((prev) =>
+        prev.map((u) => {
+          const uid = u.id || u._id;
+          if (uid === senderId) {
+            return {
+              ...u,
+              lastMessage: newMsg.text,
+              time: newMsg.time || "Just now",
+              unread: activeUserId === senderId ? 0 : (u.unread || 0) + 1,
+            };
+          }
+          return u;
+        })
+      );
+    });
+
+    // Typing indicators
+    socket.on("userTyping", ({ senderId }) => {
+      if (activeUserId === senderId) setIsTyping(true);
+    });
+
+    socket.on("userStopTyping", ({ senderId }) => {
+      if (activeUserId === senderId) setIsTyping(false);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [currentUser, activeUserId]);
+
+  // 2. Fetch registered users from MongoDB
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        setLoadingUsers(true);
+        const res = await userService.getUsers();
+        if (res && res.users) {
+          setUsers(res.users);
+          // Set first user as active if not yet selected
+          if (res.users.length > 0 && !activeUserId) {
+            const firstId = res.users[0].id || res.users[0]._id;
+            setActiveUserId(firstId);
+            loadMessagesForUser(firstId);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load users from backend:", err);
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+
+    loadUsers();
+  }, [currentUser]);
+
+  // 3. Helper to load messages for a specific user from MongoDB
+  const loadMessagesForUser = async (targetId) => {
+    try {
+      const res = await messageService.getMessages(targetId);
+      if (res && res.messages) {
+        setMessagesMap((prev) => ({
+          ...prev,
+          [targetId]: res.messages,
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to load conversation history:", err);
+    }
+  };
+
+  // 4. Handle selecting a user from the sidebar
   const handleSelectUser = (user) => {
-    setActiveUserId(user.id);
+    const targetId = user.id || user._id;
+    setActiveUserId(targetId);
     setIsMobileListOpen(false);
 
     // Clear unread badge
     setUsers((prev) =>
-      prev.map((u) => (u.id === user.id ? { ...u, unread: 0 } : u))
+      prev.map((u) => ((u.id || u._id) === targetId ? { ...u, unread: 0 } : u))
     );
+
+    // Load actual messages from MongoDB
+    loadMessagesForUser(targetId);
   };
 
-  const handleSendMessage = (text) => {
+  // 5. Send real message to backend & Socket.io
+  const handleSendMessage = async (text) => {
+    if (!activeUserId) return;
+
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-    const newMsg = {
-      id: `msg_${Date.now()}`,
+    // Temporary optimistic UI message
+    const tempId = `temp_${Date.now()}`;
+    const optimisticMsg = {
+      id: tempId,
+      _id: tempId,
       text,
-      sender: currentUser?.name || "Alka",
+      sender: currentUser?.name || "You",
       time: timeStr,
       isOwn: true,
     };
 
-    // Update active chat messages
     setMessagesMap((prev) => ({
       ...prev,
-      [activeUserId]: [...(prev[activeUserId] || []), newMsg],
+      [activeUserId]: [...(prev[activeUserId] || []), optimisticMsg],
     }));
 
-    // Update contact preview
+    // Update sidebar preview
     setUsers((prev) =>
       prev.map((u) =>
-        u.id === activeUserId
+        (u.id || u._id) === activeUserId
           ? { ...u, lastMessage: `You: ${text}`, time: timeStr }
           : u
       )
     );
 
-    // Realistic auto-reply simulation for demo showcase
-    setTimeout(() => {
-      setIsTyping(true);
-      setTimeout(() => {
-        setIsTyping(false);
-        const replyTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        const autoReplies = [
-          "Got it! That sounds super cool! 🚀",
-          "Awesome, I'm working on the socket events now.",
-          "Received! Let's build something epic today.",
-          "Perfect! Testing real-time synchronization now. ⚡",
-        ];
-        const randomReply = autoReplies[Math.floor(Math.random() * autoReplies.length)];
-
-        const replyMsg = {
-          id: `reply_${Date.now()}`,
-          text: randomReply,
-          sender: activeUser.name,
-          time: replyTime,
-          isOwn: false,
-        };
-
+    // Persist in MongoDB
+    try {
+      const res = await messageService.sendMessage(activeUserId, text);
+      if (res && res.message) {
+        // Replace temp msg with confirmed message
         setMessagesMap((prev) => ({
           ...prev,
-          [activeUserId]: [...(prev[activeUserId] || []), replyMsg],
+          [activeUserId]: (prev[activeUserId] || []).map((m) =>
+            m.id === tempId ? res.message : m
+          ),
         }));
+      }
+    } catch (err) {
+      console.error("Failed to send message to MongoDB:", err);
+    }
+  };
 
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.id === activeUserId
-              ? { ...u, lastMessage: randomReply, time: replyTime }
-              : u
-          )
-        );
-      }, 1600);
-    }, 800);
+  // 6. Handle typing event
+  const handleTyping = () => {
+    if (!socketRef.current || !activeUserId) return;
+    const currentId = currentUser?.id || currentUser?._id;
+    socketRef.current.emit("typing", {
+      senderId: currentId,
+      receiverId: activeUserId,
+    });
+
+    // Debounced stop typing
+    clearTimeout(window.typingTimer);
+    window.typingTimer = setTimeout(() => {
+      socketRef.current?.emit("stopTyping", {
+        senderId: currentId,
+        receiverId: activeUserId,
+      });
+    }, 1500);
   };
 
   return (
@@ -232,12 +223,14 @@ function ChatPage({ currentUser, onLogout, isDarkMode, onToggleTheme }) {
           activeUser={activeUser}
           onSelectUser={handleSelectUser}
           isMobileListOpen={isMobileListOpen}
+          loading={loadingUsers}
         />
 
         <ChatWindow
           activeUser={activeUser}
           messages={activeMessages}
           onSendMessage={handleSendMessage}
+          onTyping={handleTyping}
           isTyping={isTyping}
           onBackToList={() => setIsMobileListOpen(true)}
         />

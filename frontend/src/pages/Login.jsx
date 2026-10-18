@@ -11,29 +11,35 @@ import {
   ArrowRightIcon,
 } from "../Components/Icons";
 
-function Login({ onLogin, onSwitchToSignup }) {
-  const [email, setEmail] = useState("alka@exemple.com");
-  const [password, setPassword] = useState("password123");
-  const [showPassword, setShowPassword] = useState(false);
+import { authService } from "./Serivies/api";
 
-  const handleSubmit = (e) => {
+function Login({ onLogin, onSwitchToSignup }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) {
       alert("Please enter both email and password!");
       return;
     }
-    const name = email.split("@")[0];
-    onLogin({
-      email,
-      name: name.charAt(0).toUpperCase() + name.slice(1),
-    });
-  };
+    setErrorMsg("");
+    setIsLoading(true);
 
-  const handleDemoLogin = () => {
-    onLogin({
-      email: "alka@exemple.com",
-      name: "Alka",
-    });
+    try {
+      const response = await authService.login(email, password);
+      setIsLoading(false);
+      if (response && response.user) {
+        onLogin(response.user);
+      }
+    } catch (err) {
+      console.warn("Backend login error:", err.message);
+      setIsLoading(false);
+      setErrorMsg(err.message || "Invalid email or password");
+    }
   };
 
   return (
@@ -129,6 +135,21 @@ function Login({ onLogin, onSwitchToSignup }) {
               </p>
             </div>
 
+            {errorMsg && (
+              <div style={{
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.3)",
+                color: "#f87171",
+                padding: "10px 14px",
+                borderRadius: "10px",
+                fontSize: "0.85rem",
+                marginBottom: "16px",
+                lineHeight: "1.4"
+              }}>
+                {errorMsg}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="auth-form-fields">
               <div className="form-field-group">
                 <label className="field-label">Email Address</label>
@@ -139,7 +160,7 @@ function Login({ onLogin, onSwitchToSignup }) {
                   <input
                     type="email"
                     className="custom-auth-input"
-                    placeholder="alka@exemple.com"
+                    placeholder="name@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -176,18 +197,14 @@ function Login({ onLogin, onSwitchToSignup }) {
                 </div>
               </div>
 
-              <button type="submit" className="btn-workspace-submit">
-                <span>Enter Workspace</span>
-                <ArrowRightIcon size={18} color="#ffffff" />
-              </button>
-
               <button
-                type="button"
-                className="demo-pill-btn"
-                onClick={handleDemoLogin}
+                type="submit"
+                className="btn-workspace-submit"
+                disabled={isLoading}
+                style={{ opacity: isLoading ? 0.7 : 1 }}
               >
-                <ZapIcon size={16} color="#818cf8" />
-                <span>Demo Mode active: Click to login instantly</span>
+                <span>{isLoading ? "Signing in..." : "Enter Workspace"}</span>
+                <ArrowRightIcon size={18} color="#ffffff" />
               </button>
             </form>
 
